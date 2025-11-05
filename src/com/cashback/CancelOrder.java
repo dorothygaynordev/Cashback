@@ -12,6 +12,7 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 
 import com.cashback.models.cancel.CancelOrderResponse;
+import com.cashback.models.cancel.CancelPartialRequest;
 import com.cashback.models.cancel.OrderItem;
 import com.cashback.models.order.confirm.response.OrderItemResponse;
 import com.cashback.models.order.confirm.response.OrderResponse;
@@ -109,11 +110,6 @@ public class CancelOrder extends JFrame {
         List<OrderItem> itemsToCancel = validateCancelacion(orderId, selectedItems);
 
         if (itemsToCancel.isEmpty()) {
-            JOptionPane.showMessageDialog(this, 
-                "La orden: " + orderId + " ya se encuentra cancelada o no tiene artículos válidos para cancelar.", 
-                "Error", 
-                JOptionPane.ERROR_MESSAGE);
-
             cancelButton.setEnabled(true);
             return;
         }
@@ -125,8 +121,6 @@ public class CancelOrder extends JFrame {
             } else {
                 resultado = procesarCancelacionByTid(orderTid, itemsToCancel);
             }
-
-            // boolean resultado = procesarCancelacionByTid(orderTid, itemsToCancel);
             
             SwingUtilities.invokeLater(() -> {
                 showResultCancelacion(resultado);
@@ -156,7 +150,6 @@ public class CancelOrder extends JFrame {
         CloseableHttpResponse response = null;
         
         try {
-            // Obtener token primero
             TokenResponse token = obtenerToken();
             if (token == null) {
                 JOptionPane.showMessageDialog(this, 
@@ -196,7 +189,6 @@ public class CancelOrder extends JFrame {
             ex.printStackTrace();
             return false;
         } finally {
-            // Reutilizar tu método existente para cerrar recursos
             cerrarRecursos(httpClient, response);
         }
     }
@@ -206,7 +198,6 @@ public class CancelOrder extends JFrame {
         CloseableHttpResponse response = null;
         
         try {
-            // Obtener token primero
             TokenResponse token = obtenerToken();
             if (token == null) {
                 JOptionPane.showMessageDialog(this, 
@@ -225,8 +216,8 @@ public class CancelOrder extends JFrame {
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("x-guper-authorization", token.getAccessToken());
 
-            // body
-            String requestBody = objectMapper.writeValueAsString(itemsToCancel);
+            CancelPartialRequest cancelRequest = new CancelPartialRequest(itemsToCancel);
+            String requestBody = objectMapper.writeValueAsString(cancelRequest);
             StringEntity entity = new StringEntity(requestBody, StandardCharsets.UTF_8);
             httpPost.setEntity(entity);
             
@@ -255,34 +246,6 @@ public class CancelOrder extends JFrame {
         }
     }
 
-    // private CancelPartialRequest crearCancelRequest(List<Object[]> itemsToCancel) {
-    //     List<OrderItem> orderItems = new ArrayList<>();
-
-    //     for (Object[] item : itemsToCancel) {
-    //         String id = (String)item[1];
-    //         Integer quantity = (Integer)item[6];
-
-    //         double priceValue = 0.0;
-    //         if (item[7] instanceof Number) {
-    //             priceValue = ((Number) item[7]).doubleValue();
-    //         } else if (item[7] instanceof String) {
-    //             try {
-    //                 priceValue = Double.parseDouble((String) item[7]);
-    //             } catch (NumberFormatException ex) {
-    //                 priceValue = 0.0;
-    //             }
-    //         }
-
-    //         Integer price = (int) Math.round(priceValue * 100);
-
-    //         OrderItem orderItem = new OrderItem(id, quantity, price);
-    //         orderItems.add(orderItem);
-    //     }
-
-    //     return new CancelPartialRequest(orderItems);
-    // }
-
-    // Método para obtener token (similar al que tienes en SendTransaction)
     private TokenResponse obtenerToken() {
         CloseableHttpClient httpClient = null;
         CloseableHttpResponse response = null;
@@ -411,6 +374,14 @@ public class CancelOrder extends JFrame {
                 OrderItem orderItem = new OrderItem(sku, quantityFinalCancel, price);
                 itemsToCanceled.add(orderItem);
             }
+
+            if (itemsToCanceled.isEmpty()) {
+                JOptionPane.showMessageDialog(this, 
+                    "La orden ya se encuentra cancelada.", 
+                    "Error", 
+                    JOptionPane.ERROR_MESSAGE);
+                return Collections.emptyList();
+            }
             
             return itemsToCanceled;
         } catch (Exception ex) {
@@ -426,12 +397,9 @@ public class CancelOrder extends JFrame {
         if (items == null) return null;
         
         for (OrderItemResponse item : items) {
-            if (item.getSkuId().equals(skuId)) {
+            if (item.getSkuId().equals(skuId) && item.getQuantity() > item.getQuantityCanceled()) {
                 return item;
             }
-            // if (item.getSkuId().equals(skuId) && item.getQuantity() > item.getQuantityCanceled()) {
-            //     return item;
-            // }
         }
         return null;
     }

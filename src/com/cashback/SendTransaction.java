@@ -43,7 +43,6 @@ public class SendTransaction extends JFrame {
 
     private JTextField telephone;
     private JButton sendTelephone;
-    // private TokenResponse tokenActual;
     private final Dotenv dotenv;
     private static String lastOrderId;
     private static String lastOrderTid;
@@ -73,7 +72,6 @@ public class SendTransaction extends JFrame {
     private void sendTelephoneGuper(ActionEvent e) {
         String numero = telephone.getText().trim();
 
-        // Deshabilitar botón mientras se procesa
         sendTelephone.setEnabled(false);
 
         new Thread(() -> {
@@ -277,13 +275,11 @@ public class SendTransaction extends JFrame {
             String rewardApiUrl = apiUrl + "/loyalty/rewardByOrder";
             String apiInterface = dotenv.get("API_GUPER_INTERFACE");
 
-            // Crear el objeto JSON para la petición
             LoyaltyRequest request = crearLoyaltyRequest(apiInterface, phoneNumber, tableModel);
             
             httpClient = HttpClients.createDefault();
             HttpPost httpPost = new HttpPost(rewardApiUrl);
             
-            // Agregar encabezados
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("x-guper-authorization", token.getAccessToken());
             
@@ -431,13 +427,11 @@ public class SendTransaction extends JFrame {
             String apiUrl = dotenv.get("API_GUPER_URL");
             String confirmOrderUrl = apiUrl + "/loyalty/confirmOrder/" + java.net.URLEncoder.encode(confirmToken, "UTF-8");
 
-            // Crear el objeto JSON para la petición
             ConfirmRequest request = createOrderConfirmRequest(montoRedimido);
             
             httpClient = HttpClients.createDefault();
             HttpPost httpPost = new HttpPost(confirmOrderUrl);
             
-            // Agregar encabezados
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("x-guper-authorization", token.getAccessToken());
             
@@ -703,11 +697,6 @@ public class SendTransaction extends JFrame {
         SwingUtilities.invokeLater(() -> 
             JOptionPane.showMessageDialog(this, message, "Advertencia", JOptionPane.WARNING_MESSAGE));
     }
-
-    // private void showInfoMessage(String message) {
-    //     SwingUtilities.invokeLater(() -> 
-    //         JOptionPane.showMessageDialog(this, message, "Información", JOptionPane.INFORMATION_MESSAGE));
-    // }
 
     private void enableButton() {
         SwingUtilities.invokeLater(() -> sendTelephone.setEnabled(true));

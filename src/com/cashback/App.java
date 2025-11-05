@@ -56,11 +56,9 @@ public class App extends JFrame {
         table = new JTable(model);
         configurarTabla();
 
-        // Panel para la tabla
         JScrollPane scrollPane = new JScrollPane(table);
         add(scrollPane, BorderLayout.CENTER);
         
-        // Panel inferior con el botón
         JPanel panelInferior = new JPanel(new FlowLayout());
         openCashback = new JButton("Cashback");
         openCashback.addActionListener((e) -> {
@@ -133,7 +131,7 @@ public class App extends JFrame {
 
         @Override
         public boolean isCellEditable(int rowIndex, int columnIndex) {
-            return columnIndex == 0; // Solo la columna de checkbox es editable
+            return columnIndex == 0;
         }
 
         @Override
@@ -174,7 +172,7 @@ public class App extends JFrame {
 
     public void selectAllRows(boolean value) {
         for (int i = 0; i < model.getRowCount(); i++) {
-            model.setValueAt(value, i, 0); // Columna 0 es la de los checkboxes
+            model.setValueAt(value, i, 0);
         }
     }
 }
