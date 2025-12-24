@@ -3,6 +3,8 @@ package com.cashback;
 import java.awt.FlowLayout;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.text.DecimalFormat;
@@ -43,6 +45,7 @@ public class SendTransaction extends JFrame {
 
     private JTextField telephone;
     private JButton sendTelephone;
+    private JButton cancelTelephone;
     private final Dotenv dotenv;
     private static String lastOrderId;
     private static String lastOrderTid;
@@ -59,14 +62,32 @@ public class SendTransaction extends JFrame {
 
         telephone = new JTextField(20);
         sendTelephone = new JButton("Enviar");
+        cancelTelephone = new JButton("Cancelar");
 
         validationsPhoneNumber();
 
         sendTelephone.addActionListener(this::sendTelephoneGuper);
+        cancelTelephone.addActionListener(e -> cancelSendTelephone(e));
 
         add(new JLabel("Ingrese el número telefónico del cliente"));
         add(telephone);
         add(sendTelephone);
+        add(cancelTelephone);
+
+        setupWindowClosingBehavior();
+    }
+
+    private void setupWindowClosingBehavior() {
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        
+        // Agregar el listener para capturar el evento de cierre
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                System.out.println("Usuario cerró la ventana - ejecutando cancelSendTelephone");
+                cancelSendTelephone(null);
+            }
+        });
     }
 
     private void sendTelephoneGuper(ActionEvent e) {
@@ -155,6 +176,68 @@ public class SendTransaction extends JFrame {
                 enableButton();
             }
         }).start();
+    }
+
+    private void cancelSendTelephone(ActionEvent e) {
+        // String numero = "";
+        String numero = telephone.getText().trim();
+        new Thread(() -> {
+            try {
+                TokenResponse token = obtenerToken();
+                if (token == null) {
+                    showErrorMessage("No se pudo obtener el token de autenticación");
+                    enableButton();
+                    return;
+                }
+
+                // Obtener el TableModel
+                TableModel tableModel = getTableModel();
+
+                if (tableModel == null || tableModel.getRowCount() == 0) {
+                    showErrorMessage("No hay productos en la tabla");
+                    enableButton();
+                    return;
+                }
+
+                LoyaltyResponse transaccionExitosa = enviarTransaccionReward(numero, token, tableModel);
+                if (transaccionExitosa == null) {
+                    showErrorMessage("Ocurrio un error al procesar la transacción.");
+                    enableButton();
+                    return;
+                }
+
+                ConfirmResponse completeTransaction = confirmOrder(token, transaccionExitosa.getConfirmToken(), null);
+
+                if (completeTransaction != null) {
+                    lastOrderTid = completeTransaction.getTid();
+                    lastOrderId = completeTransaction.getOrderId();
+
+                    try (Connection conn = DatabaseConnection.getConnection()) {
+                        String sql = "INSERT INTO Ventas (IdVenta, TID) VALUES (?, ?)";
+                        PreparedStatement ps = conn.prepareStatement(sql);
+                        ps.setString(1, lastOrderId);
+                        ps.setString(2, lastOrderTid);
+                        ps.executeUpdate();
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                        showErrorMessage("❌ Error al guardar: " + ex.getMessage());
+                    }
+
+                    showSuccessMessage("Transacción completada exitosamente.\n" +
+                        "Order ID: " + lastOrderId + "\n" +
+                        "TID: " + lastOrderTid);
+                }
+
+                enableButton();
+
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                showErrorMessage("Error en el proceso: " + ex.getMessage());
+                enableButton();
+            }
+        }).start();
+
+        dispose();
     }
 
     private void validationsPhoneNumber() {
@@ -315,7 +398,7 @@ public class SendTransaction extends JFrame {
         
         List<Item> items = convertTableModelToItems(tableModel);
 
-        Attendants attendants = new Attendants();
+        Attendants attendants = new Attendants(); 
         String vendedor = firstOrDefault(tableModel, 10);
         if (vendedor != null) {
             Salesperson salesperson = new Salesperson();
@@ -326,7 +409,9 @@ public class SendTransaction extends JFrame {
         LoyaltyRequest request = new LoyaltyRequest();
         request.setInterfaceName(apiInterface);
         request.setStoreId(dotenv.get("API_GUPER_TIENDA"));
-        request.setClient(client);
+        if (!phoneNumber.isEmpty()) {
+            request.setClient(client);
+        }
         request.setItems(items);
         request.setAttendants(attendants);
         request.setShipping(Arrays.asList());
