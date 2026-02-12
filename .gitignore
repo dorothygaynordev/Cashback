@@ -1,0 +1,34 @@
+# --- JAVA ---
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# --- VS CODE ---
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# --- BINARIOS Y LOGS ---
+bin/
+build/
+target/
+out/
+*.log
+
+# --- SISTEMA OPERATIVO ---
+.DS_Store
+Thumbs.db
+
+# --- HERRAMIENTAS DE CONSTRUCCIÓN (Opcional si usas Maven/Gradle) ---
+.gradle/
+.settings/
+.classpath
+.project
+nbproject/
