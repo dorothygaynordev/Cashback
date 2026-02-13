@@ -6,15 +6,29 @@ import javax.swing.table.AbstractTableModel;
 import java.awt.*;
 
 public class App extends JFrame {
-    private JButton openCashback;
+    private JButton checkCashback;
     private JButton cancelOrder;
     private JButton confirmCancellation;
+    private JButton printTicket;
     private JTable table;
     private DefaultTableModel model;
+    private ValidationTicket validationTicket;
+
+    // Variables de Estado Global
+    private String lastOrderId;
+    private String lastOrderTid;
+    private Long customerId;
+    private Double montoRedimible = 0.0;
+    private Double cashbackAcumulado;
+    private Double montoTotalVenta;
+    private String confirmToken;
+    private int totalItems = 0;
+    private boolean pinUserValido = false;
 
     public App() {
         configurarVentana();
         inicializarComponentes();
+        updateStateCheckCashback();
     }
 
     private void configurarVentana() {
@@ -23,6 +37,55 @@ public class App extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
+    }
+
+    private void inicializarComponentes() {
+        model = new DefaultTableModel();
+        table = new JTable(model);
+        configurarTabla();
+
+        table.getModel().addTableModelListener(e -> {
+            if (e.getColumn() == 0) {
+                updateStateCheckCashback();
+            }
+        });
+
+        JScrollPane scrollPane = new JScrollPane(table);
+        add(scrollPane, BorderLayout.CENTER);
+        
+        JPanel panelInferior = new JPanel(new FlowLayout());
+        validationTicket = new ValidationTicket(this);
+
+        // Boton Consultar Cashback
+        checkCashback = new JButton("Consultar Cashback");
+        checkCashback.addActionListener((e) -> {
+            new CheckCashback(App.this).setVisible(true);
+        });
+
+        // Boton Imprimir Ticket
+        printTicket = new JButton("Imprimir Ticket");
+        printTicket.addActionListener((e) -> {
+            validationTicket.validateTransaction();
+        });
+
+        // Boton Cancelar Orden
+        cancelOrder = new JButton("Cancelar Orden");
+        cancelOrder.addActionListener((e) -> {
+            selectAllRows(true);
+        });
+
+        // Boton Confirmar Cancelacion
+        confirmCancellation = new JButton("Confirmar Cancelacion");
+        confirmCancellation.addActionListener((e) -> {
+            java.util.List<Object[]> selectedItems = model.getSelectedRows();
+            new CancelOrder(App.this, selectedItems).setVisible(true);
+        });
+        
+        panelInferior.add(checkCashback);
+        panelInferior.add(printTicket);
+        panelInferior.add(cancelOrder);
+        panelInferior.add(confirmCancellation);
+        add(panelInferior, BorderLayout.SOUTH);
     }
 
     private void configurarTabla() {
@@ -50,35 +113,9 @@ public class App extends JFrame {
         table.getColumnModel().getColumn(10).setPreferredWidth(80); // Vendedor
     }
 
-    private void inicializarComponentes() {
-        model = new DefaultTableModel();
-
-        table = new JTable(model);
-        configurarTabla();
-
-        JScrollPane scrollPane = new JScrollPane(table);
-        add(scrollPane, BorderLayout.CENTER);
-        
-        JPanel panelInferior = new JPanel(new FlowLayout());
-        openCashback = new JButton("Cashback");
-        openCashback.addActionListener((e) -> {
-            new SendTransaction().setVisible(true);
-        });
-        cancelOrder = new JButton("Cancelar Orden");
-        cancelOrder.addActionListener((e) -> {
-            selectAllRows(true);
-        });
-        confirmCancellation = new JButton("Confirmar Cancelacion");
-        confirmCancellation.addActionListener((e) -> {
-            java.util.List<Object[]> selectedItems = model.getSelectedRows();
-            CancelOrder cancelOrderWindow = new CancelOrder(selectedItems, model.getRowCount());
-            cancelOrderWindow.setVisible(true);
-        });
-        
-        panelInferior.add(openCashback);
-        panelInferior.add(cancelOrder);
-        panelInferior.add(confirmCancellation);
-        add(panelInferior, BorderLayout.SOUTH);
+    private void updateStateCheckCashback() {
+        java.util.List<Object[]> selectedItems = model.getSelectedRows();
+        checkCashback.setEnabled(!selectedItems.isEmpty());
     }
 
     class DefaultTableModel extends AbstractTableModel {
@@ -87,7 +124,10 @@ public class App extends JFrame {
         private Object[][] data = {
             {false, "D12220275501", "501", "Senties 14-180", "Negro", 230, 1, 779.00, 0, 779.00, 525, 32972},
             {false, "D17020012501", "523", "Senties 14-181", "Azul Marino", 210, 1, 579.00, 0, 579.00, 525, 32972},
-            {false, "D02380175501", "556", "Senties 14-182", "Café", 230, 1, 879.00, 0, 879.00, 525, 32972}
+            {false, "D02380175501", "556", "Senties 14-182", "Café", 230, 1, 879.00, 0, 879.00, 525, 32972},
+            {false, "D16780027530", "530", "Senties 14-183", "Rojo", 220, 1, 719.00, 0, 719.00, 525, 32972},
+            {false, "D80350001553", "553", "Senties 14-184", "Camel", 210, 1, 679.00, 0, 679.00, 525, 32972},
+            {false, "D06001591532", "532", "Senties 14-182", "Vino", 230, 1, 559.00, 0, 559.00, 525, 32972}
         };
 
         @Override
@@ -151,6 +191,14 @@ public class App extends JFrame {
             }
             return selected;
         }
+
+        public int getSelectedRowCount() {
+            return getSelectedRows().size();
+        }
+
+        public boolean hasSelectedRows() {
+            return getSelectedRowCount() > 0;
+        }
     } 
 
     public static void main(String[] args) {
@@ -174,5 +222,62 @@ public class App extends JFrame {
         for (int i = 0; i < model.getRowCount(); i++) {
             model.setValueAt(value, i, 0);
         }
+    }
+
+    public void showSuccessMessage(String message) {
+        SwingUtilities.invokeLater(() -> 
+            JOptionPane.showMessageDialog(this, message, "Éxito", JOptionPane.INFORMATION_MESSAGE));
+    }
+
+    public void showWarningMessage(String message) {
+        SwingUtilities.invokeLater(() -> 
+            JOptionPane.showMessageDialog(this, message, "Advertencia", JOptionPane.WARNING_MESSAGE));
+    }
+
+    public void showErrorMessage(String message) {
+        SwingUtilities.invokeLater(() -> 
+            JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE));
+    }
+
+    // ===============================================
+    //  GETTERS Y SETTERS
+    // ===============================================
+    public String getLastOrderId() { return lastOrderId; }
+    public void setLastOrderId(String lastOrderId) { this.lastOrderId = lastOrderId; }
+
+    public String getLastOrderTid() { return lastOrderTid; }
+    public void setLastOrderTid(String lastOrderTid) { this.lastOrderId = lastOrderTid; }
+
+    public Long getCustomerId() { return customerId; }
+    public void setCustomerId(Long customerId) { this.customerId = customerId; }
+
+    public Double getMontoRedimible() { return montoRedimible; }
+    public void setMontoRedimible(Double montoRedimible) { this.montoRedimible = montoRedimible; }
+
+    public Double getCashbackAcumulado() { return cashbackAcumulado; }
+    public void setCashbackAcumulado(Double cashbackAcumulado) { this.cashbackAcumulado = cashbackAcumulado; }
+
+    public Double getMontoTotalVenta() { return montoTotalVenta; }
+    public void setMontoTotalVenta(Double montoTotalVenta) { this.montoTotalVenta = montoTotalVenta; }
+
+    public String getConfirmToken() { return confirmToken; }
+    public void setConfirmToken(String confirmToken) { this.confirmToken = confirmToken; }
+
+    public int getTotalItems() { return totalItems; }
+    public void setTotalItems(int totalItems) { this.totalItems = totalItems; }
+
+    public boolean getPinUserValido() { return pinUserValido; }
+    public void setPinUserValido(boolean pinUserValido) { this.pinUserValido = pinUserValido; }
+
+    public void CleanStateTransaction() {
+        // this.lastOrderId = null;
+        // this.lastOrderId = null;
+        this.customerId = null;
+        this.montoRedimible = null;
+        this.cashbackAcumulado = null;
+        this.montoTotalVenta = null;
+        this.confirmToken = null;
+        this.totalItems = 0;
+        this.pinUserValido = false;
     }
 }

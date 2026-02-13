@@ -34,26 +34,34 @@ import java.util.Collections;
 import java.util.List;
 
 public class CancelOrder extends JFrame {
+    private static final ObjectMapper objectMapper = new ObjectMapper()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private JTextField orderIdField;
     private JButton cancelButton;
-    private java.util.List<Object[]> selectedItems;
+    private java.util.List<Object[]> _selectedItems;
     private final Dotenv dotenv;
+    private App _app;
     private int totalItems;
 
-    public CancelOrder(java.util.List<Object[]> _selectedItems, int _totalItems) {
+    public CancelOrder(App app, java.util.List<Object[]> selectedItems) {
+        _app = app;
         dotenv = Dotenv.configure()
-                .directory(System.getProperty("user.dir"))
-                .load();
+            .directory(System.getProperty("user.dir"))
+            .load();
 
-        selectedItems = _selectedItems;
-        totalItems = _totalItems;
+        _selectedItems = selectedItems;
+        // totalItems = _totalItems;
+        
+        configurarVentana();
+        inicializarComponentes();
+        cargarUltimaOrden();
+    }
+
+    private void configurarVentana() {
         setTitle("Cancelar Orden");
         setSize(400, 200);
         setLocationRelativeTo(null);
         setLayout(new FlowLayout(FlowLayout.CENTER, 10, 40));
-
-        inicializarComponentes();
-        cargarUltimaOrden();
     }
 
     private void inicializarComponentes() {
@@ -107,7 +115,7 @@ public class CancelOrder extends JFrame {
             return;
         }
 
-        List<OrderItem> itemsToCancel = validateCancelacion(orderId, selectedItems);
+        List<OrderItem> itemsToCancel = validateCancelacion(orderId, _selectedItems);
 
         if (itemsToCancel.isEmpty()) {
             cancelButton.setEnabled(true);
@@ -292,11 +300,8 @@ public class CancelOrder extends JFrame {
         }
     }
 
-    private static final ObjectMapper objectMapper = new ObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
     private void cargarUltimaOrden() {
-        String ultimoTid = SendTransaction.getLastOrderId();
+        String ultimoTid = _app.getLastOrderId();
         System.out.println("Último ID obtenido: " + ultimoTid);
         
         if (ultimoTid != null && !ultimoTid.isEmpty()) {

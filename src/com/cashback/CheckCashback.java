@@ -1,19 +1,21 @@
 package com.cashback;
 
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Dialog;
 import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.Label;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.text.DecimalFormat;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
 
 import javax.swing.*;
-import javax.swing.table.TableModel;
 
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -29,9 +31,6 @@ import com.cashback.models.loyalty.request.Item;
 import com.cashback.models.loyalty.request.LoyaltyRequest;
 import com.cashback.models.loyalty.request.Attendants.Salesperson;
 import com.cashback.models.loyalty.response.LoyaltyResponse;
-import com.cashback.models.order.confirm.request.ConfirmRequest;
-import com.cashback.models.order.confirm.request.Payment;
-import com.cashback.models.order.confirm.response.ConfirmResponse;
 import com.cashback.models.pin.PinValidationRequest;
 import com.cashback.models.token.TokenResponse;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -39,205 +38,101 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.github.cdimascio.dotenv.Dotenv;
 
-public class SendTransaction extends JFrame {
+public class CheckCashback extends JFrame {
     private static final ObjectMapper objectMapper = new ObjectMapper()
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
     private JTextField telephone;
     private JButton sendTelephone;
     private JButton cancelTelephone;
+    private App _app;
     private final Dotenv dotenv;
-    private static String lastOrderId;
-    private static String lastOrderTid;
 
-    public SendTransaction() {
+    public CheckCashback(App app) {
+        _app = app;
         dotenv = Dotenv.configure()
-                .directory(System.getProperty("user.dir"))
-                .load();
+            .directory(System.getProperty("user.dir"))
+            .load();
+        
+        configurarVentana();
+        inicializarComponentes();
+    }
 
-        setTitle("Alta Cashback");
+    private void configurarVentana() {
+        setTitle("Consultar Cashback");
         setSize(400, 200);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new FlowLayout(FlowLayout.CENTER, 10, 40));
+    }
 
+    private void inicializarComponentes() {
         telephone = new JTextField(20);
         sendTelephone = new JButton("Enviar");
         cancelTelephone = new JButton("Cancelar");
 
         validationsPhoneNumber();
 
-        sendTelephone.addActionListener(this::sendTelephoneGuper);
-        cancelTelephone.addActionListener(e -> cancelSendTelephone(e));
+        sendTelephone.addActionListener(e -> {
+            if (sendTelephone.isEnabled()) {
+                checkCashback(e);
+            }
+        });
+
+        telephone.addActionListener(e -> {
+            if (sendTelephone.isEnabled()) {
+                checkCashback(e);
+            } else {
+                _app.showErrorMessage("Ingrese un número de teléfono válido.");
+            }
+        });
+
+        cancelTelephone.addActionListener(e -> dispose());
 
         add(new JLabel("Ingrese el número telefónico del cliente"));
         add(telephone);
         add(sendTelephone);
         add(cancelTelephone);
-
-        setupWindowClosingBehavior();
     }
 
-    private void setupWindowClosingBehavior() {
-        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        
-        // Agregar el listener para capturar el evento de cierre
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                System.out.println("Usuario cerró la ventana - ejecutando cancelSendTelephone");
-                cancelSendTelephone(null);
-            }
-        });
-    }
-
-    private void sendTelephoneGuper(ActionEvent e) {
+    private void checkCashback(ActionEvent e) {
         String numero = telephone.getText().trim();
 
-        sendTelephone.setEnabled(false);
+        JTable table = _app.getTable();
+        if (table.getSelectedRowCount() == 0) {
+            _app.showErrorMessage("No hay articulos seleccionados.");
+            enableButton();
+            return;
+        }
 
         new Thread(() -> {
-            try {
+            try {         
                 TokenResponse token = obtenerToken();
                 if (token == null) {
-                    showErrorMessage("No se pudo obtener el token de autenticación");
+                    _app.showErrorMessage("No se pudo obtener el token de autenticación");
                     enableButton();
                     return;
                 }
 
-                // Obtener el TableModel
-                TableModel tableModel = getTableModel();
-
-                if (tableModel == null || tableModel.getRowCount() == 0) {
-                    showErrorMessage("No hay productos en la tabla");
-                    enableButton();
-                    return;
-                }
-
-                LoyaltyResponse transaccionExitosa = enviarTransaccionReward(numero, token, tableModel);
+                LoyaltyResponse transaccionExitosa = enviarTransaccionReward(numero, token, table);
                 if (transaccionExitosa == null) {
-                    showErrorMessage("Sin cashback que aplicar.");
+                    _app.showErrorMessage("Sin cashback que aplicar.");
                     enableButton();
                     return;
                 }
 
-                Integer cashbackAcumulado = transaccionExitosa.getCashback().getUserBalance().getAvailableAmount();
-                Integer montoRedimible = transaccionExitosa.getCashback().getThisOrder().getRedeemable().getTotal();
+                saveVariablesTransaction(transaccionExitosa);
 
-                DecimalFormat decimalFormat = new DecimalFormat("#0.00");
-                String cashbackAcumuladoFormateado = decimalFormat.format(cashbackAcumulado / 100.0);
-                String montoRedimibleFormateado = decimalFormat.format(montoRedimible / 100.0);
+                SwingUtilities.invokeLater(() -> {
+                    aplicarCashback(CheckCashback.this);
+                });
 
-                String titulo = "Ajuste de Cashback";
-                String mensaje = String.format(
-                    "<html><b>Cashback acumulado:</b> $%s<br>" +
-                    "<b>Saldo disponible:</b> $%s</html>",
-                    cashbackAcumuladoFormateado,
-                    montoRedimibleFormateado
-                );
-
-                JOptionPane.showMessageDialog(this, mensaje, titulo, JOptionPane.INFORMATION_MESSAGE);
-
-                if (montoRedimible > 0) {
-                    boolean pinExitoso = solicitarPin(token, transaccionExitosa.getCustomerId());
-                    if (!pinExitoso) {
-                        showErrorMessage("Proceso cancelado por error en PIN");
-                        enableButton();
-                        return;
-                    }
-                }
-
-                ConfirmResponse completeTransaction = confirmOrder(token, transaccionExitosa.getConfirmToken(), montoRedimible);
-
-                if (completeTransaction != null) {
-                    lastOrderTid = completeTransaction.getTid();
-                    lastOrderId = completeTransaction.getOrderId();
-
-                    try (Connection conn = DatabaseConnection.getConnection()) {
-                        String sql = "INSERT INTO Ventas (IdVenta, TID) VALUES (?, ?)";
-                        PreparedStatement ps = conn.prepareStatement(sql);
-                        ps.setString(1, lastOrderId);
-                        ps.setString(2, lastOrderTid);
-                        ps.executeUpdate();
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                        showErrorMessage("❌ Error al guardar: " + ex.getMessage());
-                    }
-
-                    showSuccessMessage("Transacción completada exitosamente.\n" +
-                        "Order ID: " + lastOrderId + "\n" +
-                        "TID: " + lastOrderTid);
-                }
-
-                enableButton();
-
+                dispose();
             } catch (Exception ex) {
                 ex.printStackTrace();
-                showErrorMessage("Error en el proceso: " + ex.getMessage());
+                _app.showErrorMessage("Error en el proceso: " + ex.getMessage());
                 enableButton();
             }
         }).start();
-    }
-
-    private void cancelSendTelephone(ActionEvent e) {
-        // String numero = "";
-        String numero = telephone.getText().trim();
-        new Thread(() -> {
-            try {
-                TokenResponse token = obtenerToken();
-                if (token == null) {
-                    showErrorMessage("No se pudo obtener el token de autenticación");
-                    enableButton();
-                    return;
-                }
-
-                // Obtener el TableModel
-                TableModel tableModel = getTableModel();
-
-                if (tableModel == null || tableModel.getRowCount() == 0) {
-                    showErrorMessage("No hay productos en la tabla");
-                    enableButton();
-                    return;
-                }
-
-                LoyaltyResponse transaccionExitosa = enviarTransaccionReward(numero, token, tableModel);
-                if (transaccionExitosa == null) {
-                    showErrorMessage("Ocurrio un error al procesar la transacción.");
-                    enableButton();
-                    return;
-                }
-
-                ConfirmResponse completeTransaction = confirmOrder(token, transaccionExitosa.getConfirmToken(), null);
-
-                if (completeTransaction != null) {
-                    lastOrderTid = completeTransaction.getTid();
-                    lastOrderId = completeTransaction.getOrderId();
-
-                    try (Connection conn = DatabaseConnection.getConnection()) {
-                        String sql = "INSERT INTO Ventas (IdVenta, TID) VALUES (?, ?)";
-                        PreparedStatement ps = conn.prepareStatement(sql);
-                        ps.setString(1, lastOrderId);
-                        ps.setString(2, lastOrderTid);
-                        ps.executeUpdate();
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                        showErrorMessage("❌ Error al guardar: " + ex.getMessage());
-                    }
-
-                    showSuccessMessage("Transacción completada exitosamente.\n" +
-                        "Order ID: " + lastOrderId + "\n" +
-                        "TID: " + lastOrderTid);
-                }
-
-                enableButton();
-
-            } catch (Exception ex) {
-                ex.printStackTrace();
-                showErrorMessage("Error en el proceso: " + ex.getMessage());
-                enableButton();
-            }
-        }).start();
-
-        dispose();
     }
 
     private void validationsPhoneNumber() {
@@ -348,7 +243,7 @@ public class SendTransaction extends JFrame {
         }
     }
 
-    private LoyaltyResponse enviarTransaccionReward(String phoneNumber, TokenResponse token, TableModel tableModel) {
+    private LoyaltyResponse enviarTransaccionReward(String phoneNumber, TokenResponse token, JTable table) {
         CloseableHttpClient httpClient = null;
         CloseableHttpResponse response = null;
         LoyaltyResponse loyaltyResponse = new LoyaltyResponse();
@@ -358,7 +253,7 @@ public class SendTransaction extends JFrame {
             String rewardApiUrl = apiUrl + "/loyalty/rewardByOrder";
             String apiInterface = dotenv.get("API_GUPER_INTERFACE");
 
-            LoyaltyRequest request = crearLoyaltyRequest(apiInterface, phoneNumber, tableModel);
+            LoyaltyRequest request = crearLoyaltyRequest(apiInterface, phoneNumber, table);
             
             httpClient = HttpClients.createDefault();
             HttpPost httpPost = new HttpPost(rewardApiUrl);
@@ -378,6 +273,8 @@ public class SendTransaction extends JFrame {
 
             if (statusCode == 200) {
                 loyaltyResponse = objectMapper.readValue(responseBody, LoyaltyResponse.class);
+                String requestJson = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(loyaltyResponse);
+                System.out.println("Request JSON: " + requestJson);
             } else {
                 System.err.println("Error en rewardByOrder - Código: " + statusCode + 
                                  "\nRespuesta: " + responseBody);
@@ -392,14 +289,18 @@ public class SendTransaction extends JFrame {
         }
     }
 
-    private LoyaltyRequest crearLoyaltyRequest(String apiInterface, String phoneNumber, TableModel tableModel) {
+    private LoyaltyRequest crearLoyaltyRequest(String apiInterface, String phoneNumber, JTable table) {
         Client client = new Client();
         client.setCellphone(phoneNumber.isEmpty() ? null : phoneNumber);
         
-        List<Item> items = convertTableModelToItems(tableModel);
+        List<Item> items = convertTableModelToItems(table);
+        _app.setTotalItems(items.size());
+
+        int filaSeleccionada = table.getSelectedRow();
+        Object vendorObject = table.getValueAt(filaSeleccionada, 11);
 
         Attendants attendants = new Attendants(); 
-        String vendedor = firstOrDefault(tableModel, 10);
+        String vendedor = vendorObject.toString();
         if (vendedor != null) {
             Salesperson salesperson = new Salesperson();
             salesperson.setId(vendedor);
@@ -419,145 +320,67 @@ public class SendTransaction extends JFrame {
         return request;
     }
 
-    private List<Item> convertTableModelToItems(TableModel tableModel) {
+    private List<Item> convertTableModelToItems(JTable table) {
         List<Item> items = new ArrayList<>();
+        App.DefaultTableModel tableModel = (App.DefaultTableModel) table.getModel();
+        java.util.List<Object[]> selectedRows = tableModel.getSelectedRows();
+        double totalVenta = 0.0;
 
-        for (int i = 0; i < tableModel.getRowCount(); i++) {
+        System.out.println("=== DEBUG CONVERSIÓN ===");
+
+        for (Object[] rowData : selectedRows) {
             try {
                 Item item = new Item();
                 
-                // SKU (columna 0)
-                if (tableModel.getValueAt(i, 1) != null) {
-                    item.setId(tableModel.getValueAt(i, 1).toString());
+                // SKU (columna 1)
+                if (rowData[1] != null) {
+                    item.setId(rowData[1].toString());
                 } else {
-                    System.err.println("Fila " + i + ": SKU faltante, omitiendo...");
-                    continue; // Saltar filas sin SKU
-                }
-                
-                // Nombre (columna 2)
-                if (tableModel.getValueAt(i, 3) != null) {
-                    item.setName(tableModel.getValueAt(i, 3).toString());
-                } else {
-                    System.err.println("Fila " + i + ": Descripcion faltante, omitiendo...");
+                    System.err.println("SKU faltante, omitiendo...");
                     continue;
                 }
                 
-                // Precio (columna 6) - convertir de double a centavos
-                if (tableModel.getValueAt(i, 7) != null) {
-                    try {
-                        double precioDouble = (Double) tableModel.getValueAt(i, 7);
-                        int precioEntero = (int) Math.round(precioDouble * 100);
-                        item.setPrice(precioEntero);
-                    } catch (ClassCastException e) {
-                        // Si no es Double, intentar convertir desde String
-                        try {
-                            double precioDouble = Double.parseDouble(tableModel.getValueAt(i, 7).toString());
-                            int precioEntero = (int) (precioDouble * 100);
-                            item.setPrice(precioEntero);
-                        } catch (NumberFormatException ex) {
-                            System.err.println("Fila " + i + ": Precio inválido, usando 0");
-                            item.setPrice(0);
-                        }
-                    }
+                // Nombre (columna 3)
+                if (rowData[3] != null) {
+                    item.setName(rowData[3].toString());
                 } else {
-                    item.setPrice(0);
+                    System.err.println("Descripcion faltante, omitiendo...");
+                    continue;
                 }
                 
-                // Cantidad (columna 5)
-                if (tableModel.getValueAt(i, 6) != null) {
+                // Precio (columna 7)
+                double precio = 0.0;
+                if (rowData[7] != null) {
                     try {
-                        int cantidad = (Integer) tableModel.getValueAt(i, 6);
-                        item.setQuantity(Math.max(1, cantidad)); // Mínimo 1
-                    } catch (ClassCastException e) {
-                        // Si no es Integer, intentar convertir desde String
-                        try {
-                            int cantidad = Integer.parseInt(tableModel.getValueAt(i, 6).toString());
-                            item.setQuantity(Math.max(1, cantidad));
-                        } catch (NumberFormatException ex) {
-                            System.err.println("Fila " + i + ": Cantidad inválida, usando 1");
-                            item.setQuantity(1);
-                        }
+                        precio = Double.parseDouble(rowData[7].toString());
+                        item.setPrice((int) Math.round(precio * 100));
+                    } catch (NumberFormatException e) {
+                        item.setPrice(0);
                     }
-                } else {
-                    item.setQuantity(1);
+                }
+                
+                // Cantidad (columna 6)
+                int cantidad = 1;
+                if (rowData[6] != null) {
+                    try {
+                        cantidad = Integer.parseInt(rowData[6].toString());
+                        item.setQuantity(Math.max(1, cantidad));
+                    } catch (NumberFormatException e) {
+                        item.setQuantity(1);
+                    }
                 }
                 
                 items.add(item);
+                totalVenta += precio * cantidad;
                 
             } catch (Exception e) {
-                System.err.println("Error al procesar fila " + i + ": " + e.getMessage());
-                e.printStackTrace();
+                System.err.println("Error al procesar fila: " + e.getMessage());
             }
         }
         
+        System.out.println("Total items generados: " + items.size());
+        _app.setMontoTotalVenta(totalVenta);
         return items;
-    }
-
-    private String firstOrDefault(TableModel tableModel, int columnIndex) {
-        for (int i = 0; i < tableModel.getRowCount(); i++) {
-            Object value = tableModel.getValueAt(i, columnIndex);
-            if (value != null && !value.toString().trim().isEmpty()) {
-                return value.toString().trim();
-            }
-        }
-        return null;
-    }
-
-    private ConfirmResponse confirmOrder(TokenResponse token, String confirmToken, Integer montoRedimido) {
-        CloseableHttpClient httpClient = null;
-        CloseableHttpResponse response = null;
-        ConfirmResponse confirmResponse = new ConfirmResponse();
-        
-        try {
-            String apiUrl = dotenv.get("API_GUPER_URL");
-            String confirmOrderUrl = apiUrl + "/loyalty/confirmOrder/" + java.net.URLEncoder.encode(confirmToken, "UTF-8");
-
-            ConfirmRequest request = createOrderConfirmRequest(montoRedimido);
-            
-            httpClient = HttpClients.createDefault();
-            HttpPost httpPost = new HttpPost(confirmOrderUrl);
-            
-            httpPost.setHeader("Content-Type", "application/json");
-            httpPost.setHeader("x-guper-authorization", token.getAccessToken());
-            
-            String requestBody = objectMapper.writeValueAsString(request);
-
-            StringEntity entity = new StringEntity(requestBody, "UTF-8");
-            httpPost.setEntity(entity);
-
-            response = httpClient.execute(httpPost);
-
-            int statusCode = response.getStatusLine().getStatusCode();
-            String responseBody = EntityUtils.toString(response.getEntity(), "UTF-8");
-
-            if (statusCode == 200) {
-                confirmResponse = objectMapper.readValue(responseBody, ConfirmResponse.class);
-                return confirmResponse;
-            } else {
-                System.err.println("Error en rewardByOrder - Código: " + statusCode + 
-                                 "\nRespuesta: " + responseBody);
-                
-                return null;
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            return null;
-        } finally {
-            cerrarRecursos(httpClient, response);
-        }
-    }
-
-    private ConfirmRequest createOrderConfirmRequest(Integer montoRedimido) {
-        Payment payment = new Payment();
-
-        List<Payment> payments = Arrays.asList(payment);
-
-        ConfirmRequest request = new ConfirmRequest();
-        request.setId("id-" + java.util.UUID.randomUUID().toString().substring(0, 8));
-        request.setAmountToRedeem(montoRedimido);
-        request.setPayments(payments);
-
-        return request;
     }
 
     private boolean solicitarPin(TokenResponse token, Long customerId) {
@@ -586,22 +409,22 @@ public class SendTransaction extends JFrame {
                 if (pinIngresado != null && pinIngresado.length() == 4) {
                     return validatePin(token, customerId, pinIngresado);
                 } else if (pinIngresado == null) {
-                    showWarningMessage("Proceso cancelado por el usuario");
+                    _app.showWarningMessage("Proceso cancelado por el usuario");
                     return false;
                 } else {
-                    showErrorMessage("El PIN debe tener exactamente 4 dígitos");
+                    _app.showErrorMessage("El PIN debe tener exactamente 4 dígitos");
                     return false;
                 }
             } else {
                 System.err.println("Error al enviar el PIN: " + statusCode + 
                                  "\nRespuesta: " + responseBody);
 
-                showErrorMessage("Error al enviar el PIN al cliente");
+                _app.showErrorMessage("Error al enviar el PIN al cliente");
                 return false;
             }
         } catch (Exception ex) {
             ex.printStackTrace();
-            showErrorMessage("Error de conexión al solicitar PIN: " + ex.getMessage());
+            _app.showErrorMessage("Error de conexión al solicitar PIN: " + ex.getMessage());
             return false;
         } finally {
             cerrarRecursos(httpClient, response);
@@ -640,12 +463,12 @@ public class SendTransaction extends JFrame {
                 System.err.println("Error al validar PIN - Código: " + statusCode + 
                                  "\nRespuesta: " + responseBody);
                 
-                showErrorMessage("PIN incorrecto");
+                _app.showErrorMessage("PIN incorrecto");
                 return false;
             }
         } catch (Exception ex) {
             ex.printStackTrace();
-            showErrorMessage("Error de conexión al validar PIN: " + ex.getMessage());
+            _app.showErrorMessage("Error de conexión al validar PIN: " + ex.getMessage());
             return false;
         } finally {
             cerrarRecursos(httpClient, response);
@@ -749,7 +572,7 @@ public class SendTransaction extends JFrame {
         String apiSecret = dotenv.get("API_GUPER_APISECRET");
         
         if (apiUrl == null || apiKey == null || apiSecret == null) {
-            showErrorMessage("Error al obtener datos de conexión (.env incompleto)");
+            _app.showErrorMessage("Error al obtener datos de conexión (.env incompleto)");
             return false;
         }
         return true;
@@ -766,21 +589,6 @@ public class SendTransaction extends JFrame {
         } catch (Exception ex) {
             ex.printStackTrace();
         }
-    }
-
-    private void showSuccessMessage(String message) {
-        SwingUtilities.invokeLater(() -> 
-            JOptionPane.showMessageDialog(this, message, "Éxito", JOptionPane.INFORMATION_MESSAGE));
-    }
-
-    private void showErrorMessage(String message) {
-        SwingUtilities.invokeLater(() -> 
-            JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE));
-    }
-
-    private void showWarningMessage(String message) {
-        SwingUtilities.invokeLater(() -> 
-            JOptionPane.showMessageDialog(this, message, "Advertencia", JOptionPane.WARNING_MESSAGE));
     }
 
     private void enableButton() {
@@ -805,22 +613,129 @@ public class SendTransaction extends JFrame {
         }
     }
 
-    private TableModel getTableModel() {
-        Window[] windows = Window.getWindows();
-        for (Window window : windows) {
-            if (window instanceof App) {
-                App app = (App) window;
-                return app.getTable().getModel();
+    private void saveVariablesTransaction(LoyaltyResponse response) {
+        _app.setCustomerId(response.getCustomerId());
+        _app.setMontoRedimible(response.getCashback().getThisOrder().getRedeemable().getTotal() / 100.0);
+        _app.setCashbackAcumulado(response.getCashback().getUserBalance().getAvailableAmount() / 100.0);
+        _app.setConfirmToken(response.getConfirmToken());
+    }
+
+    private void aplicarCashback(Component parent) {
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(parent), "Ajuste de Cashback", Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setLayout(new BorderLayout());
+        dialog.setSize(500, 280);
+        dialog.setLocationRelativeTo(parent);
+        
+        DecimalFormat format = new DecimalFormat("#0.00");
+        format.setMinimumFractionDigits(2);
+        
+        double maxMonto = _app.getMontoRedimible();
+        
+        // Panel principal
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+        
+        // Label
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        panel.add(new Label("Venta Total: $" + format.format(_app.getMontoTotalVenta())));
+
+        // Cashback acumulado
+        gbc.gridy = 1;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Cashback acumulado: $" + format.format(_app.getCashbackAcumulado())), gbc);
+        
+        // Monto máximo
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        panel.add(new JLabel("Monto máximo a redimir: $" + format.format(maxMonto)), gbc);
+
+        // Total items
+        gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        gbc.weightx = 0.3;
+        panel.add(new JLabel("Total items: " + _app.getTotalItems()), gbc);
+
+        // Label "Monto a aplicar"
+        gbc.gridy = 4;
+        gbc.gridwidth = 2;
+        gbc.weightx = 0.3;
+        panel.add(new JLabel("Monto a aplicar:"), gbc);
+        
+        // Campo de texto - PRECARGADO con el valor máximo
+        gbc.gridy = 5;
+        gbc.gridwidth = 2;
+        gbc.weightx = 0.7;
+        JFormattedTextField input = new JFormattedTextField(format);
+        input.setValue(maxMonto);
+        input.setColumns(10);
+        input.selectAll();
+        panel.add(input, gbc);
+        
+        // Botones
+        gbc.gridx = 0;
+        gbc.gridy = 6;
+        gbc.gridwidth = 2;
+        gbc.insets = new Insets(15, 5, 5, 5);
+        
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        JButton btnAplicar = new JButton("Aplicar");
+        JButton btnCancelar = new JButton("Cancelar");
+        
+        btnAplicar.addActionListener(ev -> {
+            try {
+                Number monto = (Number) input.getValue();
+                double montoDouble = monto.doubleValue();
+                
+                if (montoDouble > _app.getMontoRedimible()) {
+                    _app.showErrorMessage("El monto no puede exceder el máximo disponible");
+                    return;
+                }
+                
+                if (montoDouble < 0) {
+                    _app.showErrorMessage("El monto no puede ser menor que 0");
+                    return;
+                }
+
+                TokenResponse token = obtenerToken();
+                if (token == null) {
+                    _app.showErrorMessage("No se pudo obtener el token de autenticación");
+                    enableButton();
+                    return;
+                }
+
+                boolean pinValido = true;
+                if (montoDouble > 0) {
+                    pinValido = solicitarPin(token, _app.getCustomerId());
+                }
+
+                if (pinValido) {
+                    _app.showSuccessMessage("Monto aplicado: $" + new DecimalFormat("#0.00").format(montoDouble));
+                    _app.setMontoRedimible(montoDouble);
+                    _app.setPinUserValido(true);
+                    dialog.dispose();
+                }
+                
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(dialog, 
+                    "Ingrese un monto válido", 
+                    "Error", JOptionPane.ERROR_MESSAGE);
             }
-        }
-        return null;
-    }
-
-    public static String getLastOrderId() {
-        return lastOrderId;
-    }
-
-    public static String getLastOrderTid() {
-        return lastOrderTid;
+        });
+        
+        btnCancelar.addActionListener(ev -> {
+            _app.setMontoRedimible(0.0);
+            dialog.dispose();
+        });
+        
+        buttonPanel.add(btnAplicar);
+        buttonPanel.add(btnCancelar);
+        panel.add(buttonPanel, gbc);
+        
+        dialog.add(panel, BorderLayout.CENTER);
+        dialog.setVisible(true);
     }
 }
