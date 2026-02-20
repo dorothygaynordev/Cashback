@@ -1,13 +1,38 @@
-# --- JAVA ---
+# =====================================================
+# JAVA / JAVA SWING
+# =====================================================
 *.class
 *.jar
 *.war
 *.ear
-*.zip
-*.tar.gz
-*.rar
+*.jmod
 
-# --- VS CODE ---
+# Directorios de compilación
+bin/
+build/
+out/
+target/
+
+# =====================================================
+# ENTORNO / VARIABLES DE ENTORNO
+# =====================================================
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# =====================================================
+# LOGS
+# =====================================================
+*.log
+logs/
+log/
+
+# =====================================================
+# IDEs
+# =====================================================
+
+# VS Code
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
@@ -15,20 +40,39 @@
 !.vscode/extensions.json
 *.code-workspace
 
-# --- BINARIOS Y LOGS ---
-bin/
-build/
-target/
-out/
-*.log
+# IntelliJ IDEA
+.idea/
+*.iml
 
-# --- SISTEMA OPERATIVO ---
-.DS_Store
-Thumbs.db
-
-# --- HERRAMIENTAS DE CONSTRUCCIÓN (Opcional si usas Maven/Gradle) ---
-.gradle/
+# Eclipse
 .settings/
 .classpath
 .project
+
+# NetBeans
 nbproject/
+nbbuild/
+dist/
+nbdist/
+
+# =====================================================
+# BUILD TOOLS
+# =====================================================
+.gradle/
+.mvn/
+mvnw
+mvnw.cmd
+
+# =====================================================
+# SISTEMA OPERATIVO
+# =====================================================
+.DS_Store
+Thumbs.db
+
+# =====================================================
+# ARCHIVOS TEMPORALES
+# =====================================================
+*.tmp
+*.temp
+*.swp
+*~
